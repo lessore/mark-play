@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="bg" x1="164" y1="96" x2="860" y2="928" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#166b7a"/>
+      <stop offset="0.55" stop-color="#1f7a54"/>
+      <stop offset="1" stop-color="#263047"/>
+    </linearGradient>
+    <linearGradient id="bookmark" x1="304" y1="198" x2="706" y2="770" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#f6d56f"/>
+      <stop offset="1" stop-color="#e85d4f"/>
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="150%">
+      <feDropShadow dx="0" dy="32" stdDeviation="30" flood-color="#111827" flood-opacity="0.28"/>
+    </filter>
+  </defs>
+
+  <rect width="1024" height="1024" fill="none"/>
+  <g transform="translate(82 82) scale(0.84)">
+    <rect width="1024" height="1024" rx="232" fill="url(#bg)"/>
+    <path d="M246 258c0-77 62-139 139-139h254c77 0 139 62 139 139v534c0 58-67 91-113 55L512 728 359 847c-46 36-113 3-113-55V258Z" fill="url(#bookmark)" filter="url(#shadow)"/>
+    <path d="M394 325c0-34 37-56 67-39l247 141c30 17 30 61 0 78L461 646c-30 17-67-5-67-39V325Z" fill="#fff7e6"/>
+    <path d="M318 254c0-40 32-72 72-72h244c40 0 72 32 72 72v27H318v-27Z" fill="#fff7e6" opacity="0.18"/>
+  </g>
+</svg>
