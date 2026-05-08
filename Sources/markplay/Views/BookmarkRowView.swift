@@ -23,7 +23,19 @@ struct BookmarkRowView: View {
 
                 if bookmarkViewModel.editingBookmarkID == bookmark.id {
                     TextField("书签名称", text: $draftName)
-                        .textFieldStyle(.roundedBorder)
+                        .textFieldStyle(.plain)
+                        .font(.body)
+                        .foregroundStyle(Color.white.opacity(0.94))
+                        .padding(.horizontal, 9)
+                        .padding(.vertical, 6)
+                        .background(
+                            RoundedRectangle(cornerRadius: 6)
+                                .fill(Color.black.opacity(0.34))
+                        )
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 6)
+                                .stroke(isNameFocused ? Color(red: 0.47, green: 0.70, blue: 1.0).opacity(0.72) : Color.white.opacity(0.14), lineWidth: 1)
+                        )
                         .focused($isNameFocused)
                         .onSubmit {
                             bookmarkViewModel.rename(bookmark, to: draftName)
@@ -33,6 +45,13 @@ struct BookmarkRowView: View {
                             bookmarkViewModel.editingBookmarkID = nil
                         }
                         .onAppear {
+                            draftName = bookmark.name
+                            isNameFocused = true
+                        }
+                        .onChange(of: bookmarkViewModel.editingBookmarkID) { _, editingID in
+                            guard editingID == bookmark.id else {
+                                return
+                            }
                             draftName = bookmark.name
                             isNameFocused = true
                         }

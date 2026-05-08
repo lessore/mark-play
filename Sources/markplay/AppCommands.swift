@@ -21,6 +21,7 @@ struct AppCommands: Commands {
             Button("播放 / 暂停") {
                 post(.togglePlayback)
             }
+            .keyboardShortcut(.space, modifiers: [])
 
             Button("快退 5 秒") {
                 post(.skipBackward)
