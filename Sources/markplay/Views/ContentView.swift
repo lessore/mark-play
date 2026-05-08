@@ -15,6 +15,8 @@ struct ContentView: View {
     @State private var sidebarWidth: CGFloat = 320
     @State private var isDropTargeted = false
     @State private var hideControlsTask: Task<Void, Never>?
+    @State private var playerHUD: PlayerHUDState?
+    @State private var hideHUDTask: Task<Void, Never>?
 
     var body: some View {
         mainLayout
@@ -44,6 +46,8 @@ struct ContentView: View {
         }
         .onChange(of: playerViewModel.currentURL) { _, url in
             hideControlsTask?.cancel()
+            hideHUDTask?.cancel()
+            playerHUD = nil
             withAnimation(.easeOut(duration: 0.16)) {
                 areControlsVisible = true
             }
@@ -57,6 +61,26 @@ struct ContentView: View {
         }
         .onChange(of: isFullscreen) { _, _ in
             syncTrafficLightVisibility()
+        }
+        .onChange(of: playerViewModel.isPlaying) { _, isPlaying in
+            guard playerViewModel.currentURL != nil else {
+                return
+            }
+            showPlayerHUD(
+                title: isPlaying ? "播放" : "暂停",
+                detail: String(format: "%.1fx", playerViewModel.playbackRate),
+                systemImage: isPlaying ? "play.fill" : "pause.fill"
+            )
+        }
+        .onChange(of: playerViewModel.playbackRate) { _, rate in
+            guard playerViewModel.currentURL != nil else {
+                return
+            }
+            showPlayerHUD(
+                title: String(format: "%.1fx", rate),
+                detail: "播放速度",
+                systemImage: "speedometer"
+            )
         }
         .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { _ in
             syncTrafficLightVisibility()
@@ -113,6 +137,7 @@ struct ContentView: View {
         .sheet(isPresented: $bookmarkViewModel.isNamingBookmark) {
             BookmarkNamingView(
                 name: $bookmarkViewModel.pendingBookmarkName,
+                timeText: bookmarkViewModel.pendingBookmarkTimeText,
                 onConfirm: {
                     bookmarkViewModel.confirmPendingBookmark()
                 },
@@ -148,6 +173,8 @@ struct ContentView: View {
 
             MouseTrackingView {
                 showControls()
+            } onMouseDown: {
+                endBookmarkEditingAndFocusPlayer()
             }
 
             if shouldShowControls {
@@ -156,6 +183,14 @@ struct ContentView: View {
                     .padding(.vertical, isFullscreen ? 18 : 12)
                     .background(controlBackground)
                     .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
+        }
+        .overlay(alignment: .topLeading) {
+            if let playerHUD {
+                PlayerStatusHUD(state: playerHUD)
+                    .padding(.top, isFullscreen ? 24 : 18)
+                    .padding(.leading, isFullscreen ? 24 : 18)
+                    .transition(.opacity.combined(with: .move(edge: .top)))
             }
         }
         .background(Color.black)
@@ -309,6 +344,29 @@ struct ContentView: View {
         }
     }
 
+    private func showPlayerHUD(title: String, detail: String, systemImage: String) {
+        hideHUDTask?.cancel()
+        withAnimation(.easeOut(duration: 0.12)) {
+            playerHUD = PlayerHUDState(title: title, detail: detail, systemImage: systemImage)
+        }
+        hideHUDTask = Task {
+            try? await Task.sleep(for: .seconds(1.05))
+            guard !Task.isCancelled else {
+                return
+            }
+            await MainActor.run {
+                withAnimation(.easeOut(duration: 0.22)) {
+                    playerHUD = nil
+                }
+            }
+        }
+    }
+
+    private func endBookmarkEditingAndFocusPlayer() {
+        bookmarkViewModel.editingBookmarkID = nil
+        KeyCommandNSView.focusCurrent()
+    }
+
     private func showControls() {
         withAnimation(.easeOut(duration: 0.16)) {
             areControlsVisible = true
@@ -364,6 +422,7 @@ private enum SidebarLayout {
 
 private struct BookmarkNamingView: View {
     @Binding var name: String
+    let timeText: String
     @FocusState private var isFocused: Bool
     let onConfirm: () -> Void
     let onCancel: () -> Void
@@ -378,10 +437,50 @@ private struct BookmarkNamingView: View {
                     .foregroundStyle(.secondary)
             }
 
-            TextField("书签名称", text: $name)
-                .textFieldStyle(.roundedBorder)
-                .focused($isFocused)
-                .onSubmit(onConfirm)
+            VStack(alignment: .leading, spacing: 14) {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("名称")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                    TextField("书签名称", text: $name)
+                        .textFieldStyle(.roundedBorder)
+                        .focused($isFocused)
+                        .onSubmit(onConfirm)
+                }
+
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("时间")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                    HStack(spacing: 8) {
+                        Text(timeText)
+                            .font(.system(.body, design: .monospaced))
+                            .foregroundStyle(.primary)
+                            .textSelection(.enabled)
+
+                        Button {
+                            NSPasteboard.general.clearContents()
+                            NSPasteboard.general.setString(timeText, forType: .string)
+                        } label: {
+                            Image(systemName: "doc.on.doc")
+                        }
+                        .buttonStyle(.borderless)
+                        .help("复制时间")
+
+                        Spacer(minLength: 0)
+                    }
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 7)
+                    .background(
+                        RoundedRectangle(cornerRadius: 6)
+                            .fill(Color(nsColor: .controlBackgroundColor))
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 6)
+                            .stroke(Color.secondary.opacity(0.22), lineWidth: 1)
+                    )
+                }
+            }
 
             HStack {
                 Spacer()
@@ -396,6 +495,43 @@ private struct BookmarkNamingView: View {
         .onAppear {
             isFocused = true
         }
+    }
+}
+
+private struct PlayerHUDState: Equatable {
+    let title: String
+    let detail: String
+    let systemImage: String
+}
+
+private struct PlayerStatusHUD: View {
+    let state: PlayerHUDState
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Image(systemName: state.systemImage)
+                .font(.system(size: 15, weight: .semibold))
+                .frame(width: 22)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(state.title)
+                    .font(.system(size: 17, weight: .semibold))
+                    .monospacedDigit()
+                Text(state.detail)
+                    .font(.caption)
+                    .foregroundStyle(Color.white.opacity(0.68))
+            }
+        }
+        .foregroundStyle(Color.white)
+        .padding(.horizontal, 13)
+        .padding(.vertical, 10)
+        .background(.black.opacity(0.58), in: RoundedRectangle(cornerRadius: 8))
+        .overlay(
+            RoundedRectangle(cornerRadius: 8)
+                .stroke(Color.white.opacity(0.14), lineWidth: 1)
+        )
+        .shadow(color: .black.opacity(0.26), radius: 16, y: 8)
+        .allowsHitTesting(false)
     }
 }
 
@@ -471,20 +607,28 @@ private struct PlayerContextMenu: View {
 
 private struct MouseTrackingView: NSViewRepresentable {
     let onMouseMoved: () -> Void
+    let onMouseDown: () -> Void
 
     func makeNSView(context: Context) -> TrackingNSView {
         let view = TrackingNSView()
         view.onMouseMoved = onMouseMoved
+        view.onMouseDown = onMouseDown
         return view
     }
 
     func updateNSView(_ nsView: TrackingNSView, context: Context) {
         nsView.onMouseMoved = onMouseMoved
+        nsView.onMouseDown = onMouseDown
     }
 }
 
 private final class TrackingNSView: NSView {
     var onMouseMoved: (() -> Void)?
+    var onMouseDown: (() -> Void)?
+
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool {
+        true
+    }
 
     override func updateTrackingAreas() {
         super.updateTrackingAreas()
@@ -500,6 +644,11 @@ private final class TrackingNSView: NSView {
 
     override func mouseMoved(with event: NSEvent) {
         onMouseMoved?()
+    }
+
+    override func mouseDown(with event: NSEvent) {
+        onMouseDown?()
+        super.mouseDown(with: event)
     }
 }
 
@@ -558,7 +707,17 @@ private struct KeyCommandView: NSViewRepresentable {
 }
 
 private final class KeyCommandNSView: NSView {
+    private static weak var current: KeyCommandNSView?
     var onKeyDown: ((NSEvent) -> Void)?
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        Self.current = self
+    }
+
+    static func focusCurrent() {
+        current?.window?.makeFirstResponder(current)
+    }
 
     override var acceptsFirstResponder: Bool {
         true

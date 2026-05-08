@@ -12,6 +12,13 @@ final class BookmarkViewModel: ObservableObject {
     @Published var exportErrorMessage: String?
 
     private var pendingBookmarkTimestamp: Double?
+    var pendingBookmarkTimeText: String {
+        guard let pendingBookmarkTimestamp else {
+            return "--:--:--"
+        }
+        return TimeFormatter.hms(pendingBookmarkTimestamp)
+    }
+
     var sortedBookmarks: [Bookmark] {
         currentRecord?.bookmarks.sorted { $0.timestamp < $1.timestamp } ?? []
     }
@@ -28,6 +35,8 @@ final class BookmarkViewModel: ObservableObject {
             isNamingBookmark = false
             pendingBookmarkName = ""
             pendingBookmarkTimestamp = nil
+        } else {
+            syncSidecarForCurrentRecord()
         }
     }
 
@@ -180,9 +189,59 @@ final class BookmarkViewModel: ObservableObject {
         return candidate
     }
 
+    private func syncSidecarForCurrentRecord() {
+        guard let currentRecord, let context else {
+            return
+        }
+
+        do {
+            if BookmarkSidecarStore.exists(for: currentRecord) {
+                let sidecarBookmarks = try BookmarkSidecarStore.load(for: currentRecord)
+                replaceBookmarks(with: sidecarBookmarks, record: currentRecord, context: context)
+                try context.save()
+                objectWillChange.send()
+            } else {
+                try BookmarkSidecarStore.save(record: currentRecord, bookmarks: sortedBookmarks)
+            }
+            exportErrorMessage = nil
+        } catch {
+            exportErrorMessage = "书签文件同步失败：\(error.localizedDescription)"
+        }
+    }
+
+    private func replaceBookmarks(
+        with sidecarBookmarks: [SidecarBookmark],
+        record: VideoRecord,
+        context: ModelContext
+    ) {
+        for bookmark in record.bookmarks {
+            context.delete(bookmark)
+        }
+        record.bookmarks.removeAll()
+
+        for sidecarBookmark in sidecarBookmarks {
+            let bookmark = Bookmark(
+                id: sidecarBookmark.id,
+                timestamp: sidecarBookmark.timestamp,
+                name: sidecarBookmark.name,
+                createdAt: sidecarBookmark.createdAt,
+                updatedAt: sidecarBookmark.updatedAt,
+                video: record
+            )
+            record.bookmarks.append(bookmark)
+            context.insert(bookmark)
+        }
+        selectedBookmarkID = nil
+        editingBookmarkID = nil
+    }
+
     private func save() {
         do {
             try context?.save()
+            if let currentRecord {
+                try BookmarkSidecarStore.save(record: currentRecord, bookmarks: sortedBookmarks)
+            }
+            exportErrorMessage = nil
             objectWillChange.send()
         } catch {
             exportErrorMessage = "保存失败：\(error.localizedDescription)"
