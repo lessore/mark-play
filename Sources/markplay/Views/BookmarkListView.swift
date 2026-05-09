@@ -12,16 +12,25 @@ struct BookmarkListView: View {
                         BookmarkRowView(index: index + 1, bookmark: bookmark)
                         .id(bookmark.id)
                         .contentShape(Rectangle())
-                        .onTapGesture {
+                        .simultaneousGesture(TapGesture(count: 1).onEnded {
+                            if bookmarkViewModel.editingBookmarkID != bookmark.id {
+                                bookmarkViewModel.finishEditingBookmark()
+                            }
+                            bookmarkViewModel.selectedBookmarkID = bookmark.id
+                        })
+                        .highPriorityGesture(TapGesture(count: 2).onEnded {
+                            if bookmarkViewModel.editingBookmarkID != bookmark.id {
+                                bookmarkViewModel.finishEditingBookmark()
+                            }
                             bookmarkViewModel.selectedBookmarkID = bookmark.id
                             playerViewModel.seek(to: bookmark.timestamp)
-                        }
+                        })
                         .contextMenu {
                             Button("跳转到此位置") {
                                 playerViewModel.seek(to: bookmark.timestamp)
                             }
                             Button("重命名") {
-                                bookmarkViewModel.editingBookmarkID = bookmark.id
+                                bookmarkViewModel.beginEditing(bookmark)
                             }
                             Divider()
                             Button("复制时间") {
@@ -43,6 +52,10 @@ struct BookmarkListView: View {
                 .padding(10)
             }
             .background(Color.clear)
+            .contentShape(Rectangle())
+            .onTapGesture {
+                bookmarkViewModel.finishEditingBookmark()
+            }
             .onChange(of: bookmarkViewModel.editingBookmarkID) { _, id in
                 guard let id else {
                     return

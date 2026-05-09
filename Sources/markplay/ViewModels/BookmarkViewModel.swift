@@ -5,6 +5,7 @@ import SwiftData
 @MainActor
 final class BookmarkViewModel: ObservableObject {
     @Published var editingBookmarkID: UUID?
+    @Published var editingBookmarkName = ""
     @Published var selectedBookmarkID: UUID?
     @Published var showDeleteAllConfirmation = false
     @Published var isNamingBookmark = false
@@ -31,6 +32,7 @@ final class BookmarkViewModel: ObservableObject {
         self.context = context
         if record == nil {
             editingBookmarkID = nil
+            editingBookmarkName = ""
             selectedBookmarkID = nil
             isNamingBookmark = false
             pendingBookmarkName = ""
@@ -67,6 +69,19 @@ final class BookmarkViewModel: ObservableObject {
         pendingBookmarkTimestamp = nil
     }
 
+    func clearSession() {
+        editingBookmarkID = nil
+        editingBookmarkName = ""
+        selectedBookmarkID = nil
+        showDeleteAllConfirmation = false
+        isNamingBookmark = false
+        pendingBookmarkName = ""
+        pendingBookmarkTimestamp = nil
+        exportErrorMessage = nil
+        currentRecord = nil
+        context = nil
+    }
+
     private func addBookmark(at timestamp: Double, name: String) {
         guard let currentRecord, let context else {
             return
@@ -86,6 +101,7 @@ final class BookmarkViewModel: ObservableObject {
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else {
             editingBookmarkID = nil
+            editingBookmarkName = ""
             return
         }
 
@@ -93,6 +109,33 @@ final class BookmarkViewModel: ObservableObject {
         bookmark.updatedAt = Date()
         save()
         editingBookmarkID = nil
+        editingBookmarkName = ""
+    }
+
+    func beginEditing(_ bookmark: Bookmark) {
+        if editingBookmarkID != bookmark.id {
+            finishEditingBookmark()
+        }
+        editingBookmarkID = bookmark.id
+        editingBookmarkName = bookmark.name
+        selectedBookmarkID = bookmark.id
+    }
+
+    func finishEditingBookmark() {
+        guard let editingBookmarkID else {
+            return
+        }
+        guard let bookmark = sortedBookmarks.first(where: { $0.id == editingBookmarkID }) else {
+            self.editingBookmarkID = nil
+            editingBookmarkName = ""
+            return
+        }
+        rename(bookmark, to: editingBookmarkName)
+    }
+
+    func cancelEditingBookmark() {
+        editingBookmarkID = nil
+        editingBookmarkName = ""
     }
 
     func delete(_ bookmark: Bookmark) {
@@ -106,6 +149,7 @@ final class BookmarkViewModel: ObservableObject {
         }
         if editingBookmarkID == bookmark.id {
             editingBookmarkID = nil
+            editingBookmarkName = ""
         }
         save()
     }
@@ -129,6 +173,7 @@ final class BookmarkViewModel: ObservableObject {
         currentRecord.bookmarks.removeAll()
         selectedBookmarkID = nil
         editingBookmarkID = nil
+        editingBookmarkName = ""
         save()
     }
 
@@ -233,6 +278,7 @@ final class BookmarkViewModel: ObservableObject {
         }
         selectedBookmarkID = nil
         editingBookmarkID = nil
+        editingBookmarkName = ""
     }
 
     private func save() {

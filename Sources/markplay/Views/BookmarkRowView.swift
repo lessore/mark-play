@@ -4,7 +4,6 @@ struct BookmarkRowView: View {
     @EnvironmentObject private var playerViewModel: PlayerViewModel
     @EnvironmentObject private var bookmarkViewModel: BookmarkViewModel
     @FocusState private var isNameFocused: Bool
-    @State private var draftName = ""
 
     let index: Int
     let bookmark: Bookmark
@@ -22,7 +21,7 @@ struct BookmarkRowView: View {
                     .foregroundStyle(isCurrent ? Color.accentColor : Color.white.opacity(0.52))
 
                 if bookmarkViewModel.editingBookmarkID == bookmark.id {
-                    TextField("书签名称", text: $draftName)
+                    TextField("书签名称", text: $bookmarkViewModel.editingBookmarkName)
                         .textFieldStyle(.plain)
                         .font(.body)
                         .foregroundStyle(Color.white.opacity(0.94))
@@ -38,26 +37,23 @@ struct BookmarkRowView: View {
                         )
                         .focused($isNameFocused)
                         .onSubmit {
-                            bookmarkViewModel.rename(bookmark, to: draftName)
+                            bookmarkViewModel.finishEditingBookmark()
                         }
                         .onExitCommand {
-                            draftName = bookmark.name
-                            bookmarkViewModel.editingBookmarkID = nil
+                            bookmarkViewModel.cancelEditingBookmark()
                         }
                         .onAppear {
-                            draftName = bookmark.name
                             isNameFocused = true
                         }
                         .onChange(of: bookmarkViewModel.editingBookmarkID) { _, editingID in
                             guard editingID == bookmark.id else {
                                 return
                             }
-                            draftName = bookmark.name
                             isNameFocused = true
                         }
                         .onChange(of: isNameFocused) { _, focused in
                             if !focused, bookmarkViewModel.editingBookmarkID == bookmark.id {
-                                bookmarkViewModel.rename(bookmark, to: draftName)
+                                bookmarkViewModel.finishEditingBookmark()
                             }
                         }
                 } else {
@@ -65,10 +61,6 @@ struct BookmarkRowView: View {
                         .font(.body)
                         .foregroundStyle(Color.white.opacity(0.9))
                         .lineLimit(2)
-                        .onTapGesture(count: 2) {
-                            draftName = bookmark.name
-                            bookmarkViewModel.editingBookmarkID = bookmark.id
-                        }
                 }
             }
 

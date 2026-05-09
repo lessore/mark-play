@@ -59,6 +59,7 @@ struct BookmarkSidebarView: View {
             Spacer()
 
             Button {
+                bookmarkViewModel.finishEditingBookmark()
                 NotificationCenter.default.post(name: .appCommand, object: AppCommandAction.toggleBookmarkSidebar)
             } label: {
                 Image(systemName: "sidebar.right")
@@ -68,6 +69,7 @@ struct BookmarkSidebarView: View {
             .help("隐藏书签管理器")
 
             Button {
+                bookmarkViewModel.finishEditingBookmark()
                 bookmarkViewModel.beginBookmarkNaming(at: playerViewModel.currentTime)
             } label: {
                 Image(systemName: "plus")
@@ -78,6 +80,10 @@ struct BookmarkSidebarView: View {
         .padding(.horizontal, 14)
         .padding(.vertical, style == .inspector ? 12 : 14)
         .background(headerBackground)
+        .contentShape(Rectangle())
+        .onTapGesture {
+            bookmarkViewModel.finishEditingBookmark()
+        }
     }
 
     private var foregroundColor: Color {

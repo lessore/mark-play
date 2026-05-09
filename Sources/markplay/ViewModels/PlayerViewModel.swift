@@ -101,6 +101,17 @@ final class PlayerViewModel: ObservableObject {
         setPlaybackRate(1.0)
     }
 
+    func stopAndClear() {
+        player.pause()
+        player.replaceCurrentItem(with: nil)
+        currentURL = nil
+        currentRecord = nil
+        currentTime = 0
+        duration = 0
+        isPlaying = false
+        errorMessage = nil
+    }
+
     private func applyPlaybackRate() {
         player.rate = playbackRate
     }

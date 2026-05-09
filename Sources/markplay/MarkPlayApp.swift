@@ -11,6 +11,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         NSApp.activate(ignoringOtherApps: true)
     }
+
+    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
+        true
+    }
 }
 
 @main
@@ -18,13 +22,20 @@ struct MarkPlayApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @StateObject private var playerViewModel = PlayerViewModel()
     @StateObject private var bookmarkViewModel = BookmarkViewModel()
+    private let sharedModelContainer: ModelContainer = {
+        do {
+            return try ModelContainer(for: VideoRecord.self, Bookmark.self)
+        } catch {
+            fatalError("ModelContainer 初始化失败：\(error)")
+        }
+    }()
 
     var body: some Scene {
         WindowGroup {
             ContentView()
                 .environmentObject(playerViewModel)
                 .environmentObject(bookmarkViewModel)
-                .modelContainer(for: [VideoRecord.self, Bookmark.self])
+                .modelContainer(sharedModelContainer)
                 .frame(minWidth: 760, minHeight: 460)
         }
         .windowStyle(.hiddenTitleBar)

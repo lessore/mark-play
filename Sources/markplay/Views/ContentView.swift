@@ -107,6 +107,9 @@ struct ContentView: View {
             }
             syncTrafficLightVisibility()
         }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.willTerminateNotification)) { _ in
+            closeCurrentSession()
+        }
         .onReceive(NotificationCenter.default.publisher(for: .appCommand)) { notification in
             guard let command = notification.object as? AppCommandAction else {
                 return
@@ -167,14 +170,19 @@ struct ContentView: View {
             VideoPlayerView()
                 .overlay(alignment: .center) {
                     if playerViewModel.currentURL == nil {
-                        EmptyVideoState()
+                        EmptyVideoState(onOpenVideo: openVideo)
                     }
                 }
 
-            MouseTrackingView {
-                showControls()
-            } onMouseDown: {
-                endBookmarkEditingAndFocusPlayer()
+            if playerViewModel.currentURL != nil {
+                MouseTrackingView {
+                    showControls()
+                } onMouseDown: {
+                    endBookmarkEditingAndFocusPlayer()
+                } onDoubleClick: {
+                    endBookmarkEditingAndFocusPlayer()
+                    NSApp.keyWindow?.toggleFullScreen(nil)
+                }
             }
 
             if shouldShowControls {
@@ -278,13 +286,13 @@ struct ContentView: View {
         case .togglePlayback:
             playerViewModel.togglePlayback()
         case .skipBackward:
-            playerViewModel.skip(by: -5)
+            skip(by: -5)
         case .skipForward:
-            playerViewModel.skip(by: 5)
+            skip(by: 5)
         case .skipBackward30:
-            playerViewModel.skip(by: -30)
+            skip(by: -30)
         case .skipForward30:
-            playerViewModel.skip(by: 30)
+            skip(by: 30)
         case .volumeUp:
             playerViewModel.changeVolume(by: 0.05)
         case .volumeDown:
@@ -315,12 +323,28 @@ struct ContentView: View {
         }
 
         switch event.keyCode {
+        case 36, 76:
+            if shouldShowInlineSidebar, let selectedBookmarkID = bookmarkViewModel.selectedBookmarkID {
+                if let bookmark = bookmarkViewModel.sortedBookmarks.first(where: { $0.id == selectedBookmarkID }) {
+                    bookmarkViewModel.beginEditing(bookmark)
+                }
+                return
+            }
+
+            guard !isFullscreen else {
+                return
+            }
+            NSApp.keyWindow?.toggleFullScreen(nil)
         case 49:
             playerViewModel.togglePlayback()
+        case 53:
+            if isFullscreen {
+                NSApp.keyWindow?.toggleFullScreen(nil)
+            }
         case 123:
-            playerViewModel.skip(by: -5)
+            skip(by: -5)
         case 124:
-            playerViewModel.skip(by: 5)
+            skip(by: 5)
         case 125:
             playerViewModel.changeVolume(by: -0.05)
         case 126:
@@ -330,6 +354,16 @@ struct ContentView: View {
                 playerViewModel.toggleMute()
             }
         }
+    }
+
+    private func skip(by delta: Double) {
+        playerViewModel.skip(by: delta)
+        let seconds = Int(abs(delta))
+        showPlayerHUD(
+            title: delta > 0 ? "快进 \(seconds) 秒" : "快退 \(seconds) 秒",
+            detail: TimeFormatter.hms(playerViewModel.currentTime),
+            systemImage: delta > 0 ? "goforward.\(seconds)" : "gobackward.\(seconds)"
+        )
     }
 
     private func toggleBookmarkSidebar() {
@@ -363,8 +397,17 @@ struct ContentView: View {
     }
 
     private func endBookmarkEditingAndFocusPlayer() {
-        bookmarkViewModel.editingBookmarkID = nil
+        bookmarkViewModel.finishEditingBookmark()
+        bookmarkViewModel.selectedBookmarkID = nil
         KeyCommandNSView.focusCurrent()
+    }
+
+    private func closeCurrentSession() {
+        hideControlsTask?.cancel()
+        hideHUDTask?.cancel()
+        playerHUD = nil
+        playerViewModel.stopAndClear()
+        bookmarkViewModel.clearSession()
     }
 
     private func showControls() {
@@ -536,19 +579,49 @@ private struct PlayerStatusHUD: View {
 }
 
 private struct EmptyVideoState: View {
+    let onOpenVideo: () -> Void
+
     var body: some View {
-        VStack(spacing: 12) {
-            Image(systemName: "play.rectangle")
-                .font(.system(size: 52))
-                .foregroundStyle(.secondary)
-            Text("打开或拖入 mp4、mov、m4v 视频")
-                .font(.headline)
-            Text("Cmd+O 打开视频，Cmd+B 添加书签")
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
+        VStack(spacing: 14) {
+            Image(systemName: "play.square")
+                .font(.system(size: 30, weight: .medium))
+                .foregroundStyle(Color.white.opacity(0.86))
+                .frame(width: 50, height: 50)
+                .background(
+                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        .fill(Color.white.opacity(0.05))
+                )
+
+            VStack(spacing: 4) {
+                Text("打开本地视频")
+                    .font(.title3.weight(.semibold))
+
+                Text("拖入窗口，或点击下方按钮选择文件")
+                    .font(.subheadline)
+                    .foregroundStyle(Color.white.opacity(0.62))
+            }
+            .multilineTextAlignment(.center)
+
+            Button(action: onOpenVideo) {
+                Text("打开视频")
+                    .frame(minWidth: 112)
+            }
+            .buttonStyle(.borderedProminent)
+            .controlSize(.large)
+
+            Text("也可使用 Cmd+O")
+                .font(.caption)
+                .foregroundStyle(Color.white.opacity(0.46))
         }
-        .padding(28)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8))
+        .padding(.horizontal, 24)
+        .padding(.vertical, 22)
+        .frame(maxWidth: 320)
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .stroke(Color.white.opacity(0.08), lineWidth: 1)
+        )
+        .shadow(color: .black.opacity(0.18), radius: 18, y: 10)
     }
 }
 
@@ -608,23 +681,27 @@ private struct PlayerContextMenu: View {
 private struct MouseTrackingView: NSViewRepresentable {
     let onMouseMoved: () -> Void
     let onMouseDown: () -> Void
+    let onDoubleClick: () -> Void
 
     func makeNSView(context: Context) -> TrackingNSView {
         let view = TrackingNSView()
         view.onMouseMoved = onMouseMoved
         view.onMouseDown = onMouseDown
+        view.onDoubleClick = onDoubleClick
         return view
     }
 
     func updateNSView(_ nsView: TrackingNSView, context: Context) {
         nsView.onMouseMoved = onMouseMoved
         nsView.onMouseDown = onMouseDown
+        nsView.onDoubleClick = onDoubleClick
     }
 }
 
 private final class TrackingNSView: NSView {
     var onMouseMoved: (() -> Void)?
     var onMouseDown: (() -> Void)?
+    var onDoubleClick: (() -> Void)?
 
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool {
         true
@@ -648,6 +725,9 @@ private final class TrackingNSView: NSView {
 
     override func mouseDown(with event: NSEvent) {
         onMouseDown?()
+        if event.clickCount == 2 {
+            onDoubleClick?()
+        }
         super.mouseDown(with: event)
     }
 }
