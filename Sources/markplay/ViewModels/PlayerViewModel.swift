@@ -7,12 +7,15 @@ final class PlayerViewModel: ObservableObject {
     @Published var player = AVPlayer()
     @Published var currentURL: URL?
     @Published var currentRecord: VideoRecord?
+    @Published var hasVideoTrack = true
     @Published var currentTime: Double = 0
     @Published var duration: Double = 0
     @Published var isPlaying = false
     @Published var volume: Float = 1
     @Published var isMuted = false
     @Published var playbackRate: Float = 1.0
+    @Published var subtitleCues: [SubtitleCue] = []
+    @Published var activeSubtitleCue: SubtitleCue?
     @Published var errorMessage: String?
 
     private var timeObserver: Any?
@@ -22,7 +25,7 @@ final class PlayerViewModel: ObservableObject {
         installTimeObserver()
     }
 
-    func openVideo(url: URL, context: ModelContext) {
+    func openMedia(url: URL, context: ModelContext) {
         guard FileManager.default.fileExists(atPath: url.path(percentEncoded: false)) else {
             errorMessage = "文件无法访问。"
             return
@@ -36,11 +39,19 @@ final class PlayerViewModel: ObservableObject {
             currentRecord = record
             currentTime = 0
             duration = 0
+            subtitleCues = (try? EmbeddedSubtitleParser.parse(fromFileAt: url)) ?? []
+            activeSubtitleCue = nil
+            hasVideoTrack = true
+            detectVideoTrack(for: item, url: url)
             applyPlaybackRate()
             errorMessage = nil
         } catch {
-            errorMessage = "视频打开失败：\(error.localizedDescription)"
+            errorMessage = "媒体打开失败：\(error.localizedDescription)"
         }
+    }
+
+    func openVideo(url: URL, context: ModelContext) {
+        openMedia(url: url, context: context)
     }
 
     func togglePlayback() {
@@ -106,9 +117,12 @@ final class PlayerViewModel: ObservableObject {
         player.replaceCurrentItem(with: nil)
         currentURL = nil
         currentRecord = nil
+        hasVideoTrack = true
         currentTime = 0
         duration = 0
         isPlaying = false
+        subtitleCues = []
+        activeSubtitleCue = nil
         errorMessage = nil
     }
 
@@ -118,7 +132,7 @@ final class PlayerViewModel: ObservableObject {
 
     private func installTimeObserver() {
         timeObserver = player.addPeriodicTimeObserver(
-            forInterval: CMTime(seconds: 0.25, preferredTimescale: 600),
+            forInterval: CMTime(seconds: 0.1, preferredTimescale: 600),
             queue: .main
         ) { [weak self] time in
             guard let self else {
@@ -131,7 +145,36 @@ final class PlayerViewModel: ObservableObject {
                     let itemDuration = item.duration.seconds
                     self.duration = itemDuration.isFinite ? itemDuration : 0
                 }
+                self.syncActiveSubtitle()
                 self.isPlaying = self.player.timeControlStatus == .playing
+            }
+        }
+    }
+
+    private func syncActiveSubtitle() {
+        guard !subtitleCues.isEmpty else {
+            activeSubtitleCue = nil
+            return
+        }
+
+        let cue: SubtitleCue?
+        if let index = subtitleCues.lastIndex(where: { $0.startTime <= currentTime }) {
+            let candidate = subtitleCues[index]
+            cue = candidate.contains(currentTime) ? candidate : nil
+        } else {
+            cue = nil
+        }
+        activeSubtitleCue = cue
+    }
+
+    private func detectVideoTrack(for item: AVPlayerItem, url: URL) {
+        Task { [weak self] in
+            let tracks = (try? await item.asset.loadTracks(withMediaType: .video)) ?? []
+            await MainActor.run {
+                guard let self, self.currentURL == url else {
+                    return
+                }
+                self.hasVideoTrack = !tracks.isEmpty
             }
         }
     }

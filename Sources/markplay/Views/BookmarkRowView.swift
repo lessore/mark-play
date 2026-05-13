@@ -10,16 +10,12 @@ struct BookmarkRowView: View {
 
     var body: some View {
         HStack(alignment: .top, spacing: 10) {
-            Text("#\(index)")
-                .font(.caption)
-                .foregroundStyle(Color.white.opacity(0.46))
-                .frame(width: 34, alignment: .trailing)
+            Text(TimeFormatter.hms(bookmark.timestamp))
+                .font(.system(.caption, design: .monospaced))
+                .foregroundStyle(timeColor)
+                .frame(width: 74, alignment: .leading)
 
             VStack(alignment: .leading, spacing: 5) {
-                Text(TimeFormatter.hms(bookmark.timestamp))
-                    .font(.system(.caption, design: .monospaced))
-                    .foregroundStyle(isCurrent ? Color.accentColor : Color.white.opacity(0.52))
-
                 if bookmarkViewModel.editingBookmarkID == bookmark.id {
                     TextField("书签名称", text: $bookmarkViewModel.editingBookmarkName)
                         .textFieldStyle(.plain)
@@ -29,11 +25,11 @@ struct BookmarkRowView: View {
                         .padding(.vertical, 6)
                         .background(
                             RoundedRectangle(cornerRadius: 6)
-                                .fill(Color.black.opacity(0.34))
+                                .fill(Color.white.opacity(0.06))
                         )
                         .overlay(
                             RoundedRectangle(cornerRadius: 6)
-                                .stroke(isNameFocused ? Color(red: 0.47, green: 0.70, blue: 1.0).opacity(0.72) : Color.white.opacity(0.14), lineWidth: 1)
+                                .stroke(isNameFocused ? Color.accentColor.opacity(0.72) : Color.white.opacity(0.14), lineWidth: 1)
                         )
                         .focused($isNameFocused)
                         .onSubmit {
@@ -59,21 +55,21 @@ struct BookmarkRowView: View {
                 } else {
                     Text(bookmark.name)
                         .font(.body)
-                        .foregroundStyle(Color.white.opacity(0.9))
+                        .foregroundStyle(Color.white.opacity(0.92))
                         .lineLimit(2)
                 }
             }
 
             Spacer(minLength: 0)
         }
-        .padding(.vertical, 6)
-        .padding(.horizontal, 4)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
         .background(
-            RoundedRectangle(cornerRadius: 6)
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
                 .fill(rowBackground)
         )
         .overlay(
-            RoundedRectangle(cornerRadius: 6)
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
                 .stroke(rowStroke, lineWidth: 1)
         )
     }
@@ -88,25 +84,35 @@ struct BookmarkRowView: View {
 
     private var rowBackground: Color {
         if isCurrent {
-            return Color(red: 0.20, green: 0.48, blue: 0.90).opacity(0.24)
+            return Color.accentColor.opacity(0.18)
         }
 
         if isSelected {
-            return Color.white.opacity(0.12)
+            return Color.white.opacity(0.10)
         }
 
-        return Color(red: 0.15, green: 0.16, blue: 0.19).opacity(0.72)
+        return Color.clear
     }
 
     private var rowStroke: Color {
         if isCurrent {
-            return Color(red: 0.38, green: 0.65, blue: 1.0).opacity(0.42)
+            return Color.accentColor.opacity(0.28)
         }
 
         if isSelected {
-            return Color.white.opacity(0.18)
+            return Color.white.opacity(0.16)
         }
 
-        return Color.white.opacity(0.05)
+        return Color.clear
+    }
+
+    private var timeColor: Color {
+        if isCurrent {
+            return .accentColor
+        }
+        if isSelected {
+            return Color.white.opacity(0.90)
+        }
+        return Color.white.opacity(0.64)
     }
 }

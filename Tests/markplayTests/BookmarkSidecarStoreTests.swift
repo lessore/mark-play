@@ -92,3 +92,51 @@ import Testing
     #expect(loaded.count == 1)
     #expect(loaded.first?.name == "旧文件书签")
 }
+
+@Test func emptyBookmarksDoNotCreateSidecar() throws {
+    let directoryURL = FileManager.default.temporaryDirectory
+        .appendingPathComponent(UUID().uuidString, isDirectory: true)
+    try FileManager.default.createDirectory(at: directoryURL, withIntermediateDirectories: true)
+    defer {
+        try? FileManager.default.removeItem(at: directoryURL)
+    }
+
+    let videoURL = directoryURL.appendingPathComponent("lesson01.mp4")
+    FileManager.default.createFile(atPath: videoURL.path, contents: Data())
+
+    let record = VideoRecord(
+        filePath: videoURL.path,
+        fileName: videoURL.lastPathComponent
+    )
+
+    try BookmarkSidecarStore.sync(record: record, bookmarks: [])
+
+    #expect(!BookmarkSidecarStore.exists(for: record))
+}
+
+@Test func emptyBookmarksDeleteExistingSidecar() throws {
+    let directoryURL = FileManager.default.temporaryDirectory
+        .appendingPathComponent(UUID().uuidString, isDirectory: true)
+    try FileManager.default.createDirectory(at: directoryURL, withIntermediateDirectories: true)
+    defer {
+        try? FileManager.default.removeItem(at: directoryURL)
+    }
+
+    let videoURL = directoryURL.appendingPathComponent("lesson01.mp4")
+    FileManager.default.createFile(atPath: videoURL.path, contents: Data())
+
+    let record = VideoRecord(
+        filePath: videoURL.path,
+        fileName: videoURL.lastPathComponent
+    )
+    let bookmarks = [
+        Bookmark(timestamp: 12, name: "保留点", video: record)
+    ]
+
+    try BookmarkSidecarStore.save(record: record, bookmarks: bookmarks)
+    #expect(BookmarkSidecarStore.exists(for: record))
+
+    try BookmarkSidecarStore.sync(record: record, bookmarks: [])
+
+    #expect(!BookmarkSidecarStore.exists(for: record))
+}

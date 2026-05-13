@@ -56,6 +56,27 @@ enum BookmarkSidecarStore {
         )
         try data.write(to: url, options: .atomic)
     }
+
+    static func sync(record: VideoRecord, bookmarks: [Bookmark]) throws {
+        if bookmarks.isEmpty {
+            try deleteIfExists(for: record)
+            return
+        }
+        try save(record: record, bookmarks: bookmarks)
+    }
+
+    static func deleteIfExists(for record: VideoRecord) throws {
+        let videoURL = URL(fileURLWithPath: record.filePath)
+        let currentURL = sidecarURL(forVideoURL: videoURL)
+        let legacyURL = legacySidecarURL(forVideoURL: videoURL)
+
+        if FileManager.default.fileExists(atPath: currentURL.path) {
+            try FileManager.default.removeItem(at: currentURL)
+        }
+        if FileManager.default.fileExists(atPath: legacyURL.path) {
+            try FileManager.default.removeItem(at: legacyURL)
+        }
+    }
 }
 
 struct SidecarBookmark: Codable, Equatable {

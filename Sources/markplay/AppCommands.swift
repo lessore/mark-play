@@ -4,7 +4,7 @@ import SwiftUI
 struct AppCommands: Commands {
     var body: some Commands {
         CommandGroup(replacing: .newItem) {
-            Button("打开视频...") {
+            Button("打开媒体...") {
                 post(.openVideo)
             }
             .keyboardShortcut("o", modifiers: .command)

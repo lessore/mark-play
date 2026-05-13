@@ -116,7 +116,7 @@ struct ContentView: View {
             }
             handle(command)
         }
-        .onDrop(of: [.movie, .mpeg4Movie, .quickTimeMovie, .fileURL], isTargeted: $isDropTargeted) { providers in
+        .onDrop(of: [.movie, .mpeg4Movie, .quickTimeMovie, .audio, .mp3, .fileURL], isTargeted: $isDropTargeted) { providers in
             handleDrop(providers)
         }
         .overlay {
@@ -170,7 +170,7 @@ struct ContentView: View {
             VideoPlayerView()
                 .overlay(alignment: .center) {
                     if playerViewModel.currentURL == nil {
-                        EmptyVideoState(onOpenVideo: openVideo)
+                        EmptyVideoState(onOpenMedia: openMedia)
                     }
                 }
 
@@ -191,6 +191,14 @@ struct ContentView: View {
                     .padding(.vertical, isFullscreen ? 18 : 12)
                     .background(controlBackground)
                     .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
+        }
+        .overlay(alignment: .bottom) {
+            if let cue = playerViewModel.activeSubtitleCue {
+                SubtitleOverlayText(text: cue.text)
+                    .padding(.horizontal, isFullscreen ? 34 : 24)
+                    .padding(.bottom, subtitleBottomPadding)
+                    .transition(.opacity)
             }
         }
         .overlay(alignment: .topLeading) {
@@ -216,6 +224,13 @@ struct ContentView: View {
 
     private var controlBackground: some ShapeStyle {
         AnyShapeStyle(.black.opacity(isFullscreen ? 0.62 : 0.72))
+    }
+
+    private var subtitleBottomPadding: CGFloat {
+        if shouldShowControls {
+            return isFullscreen ? 104 : 84
+        }
+        return isFullscreen ? 34 : 22
     }
 
     private var shouldShowInlineSidebar: Bool {
@@ -256,16 +271,16 @@ struct ContentView: View {
             let url = data.flatMap { URL(dataRepresentation: $0, relativeTo: nil) }
             Task { @MainActor in
                 if let url {
-                    playerViewModel.openVideo(url: url, context: modelContext)
+                    playerViewModel.openMedia(url: url, context: modelContext)
                 }
             }
         }
         return true
     }
 
-    private func openVideo() {
+    private func openMedia() {
         let panel = NSOpenPanel()
-        panel.allowedContentTypes = [.mpeg4Movie, .quickTimeMovie, .movie]
+        panel.allowedContentTypes = [.mpeg4Movie, .quickTimeMovie, .movie, .mp3]
         panel.allowsMultipleSelection = false
         panel.canChooseDirectories = false
         panel.canChooseFiles = true
@@ -274,13 +289,13 @@ struct ContentView: View {
             return
         }
 
-        playerViewModel.openVideo(url: url, context: modelContext)
+        playerViewModel.openMedia(url: url, context: modelContext)
     }
 
     private func handle(_ command: AppCommandAction) {
         switch command {
         case .openVideo:
-            openVideo()
+            openMedia()
         case .exportBookmarks:
             bookmarkViewModel.exportCSV()
         case .togglePlayback:
@@ -578,8 +593,30 @@ private struct PlayerStatusHUD: View {
     }
 }
 
+private struct SubtitleOverlayText: View {
+    let text: String
+
+    var body: some View {
+        Text(text)
+            .font(.system(size: 22, weight: .medium))
+            .multilineTextAlignment(.center)
+            .foregroundStyle(Color.white)
+            .lineLimit(3)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 11)
+            .frame(maxWidth: 920)
+            .background(.black.opacity(0.56), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .stroke(Color.white.opacity(0.16), lineWidth: 1)
+            )
+            .shadow(color: .black.opacity(0.28), radius: 18, y: 7)
+            .allowsHitTesting(false)
+    }
+}
+
 private struct EmptyVideoState: View {
-    let onOpenVideo: () -> Void
+    let onOpenMedia: () -> Void
 
     var body: some View {
         VStack(spacing: 14) {
@@ -593,7 +630,7 @@ private struct EmptyVideoState: View {
                 )
 
             VStack(spacing: 4) {
-                Text("打开本地视频")
+                Text("打开本地媒体")
                     .font(.title3.weight(.semibold))
 
                 Text("拖入窗口，或点击下方按钮选择文件")
@@ -602,8 +639,8 @@ private struct EmptyVideoState: View {
             }
             .multilineTextAlignment(.center)
 
-            Button(action: onOpenVideo) {
-                Text("打开视频")
+            Button(action: onOpenMedia) {
+                Text("打开媒体")
                     .frame(minWidth: 112)
             }
             .buttonStyle(.borderedProminent)

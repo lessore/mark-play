@@ -245,7 +245,7 @@ final class BookmarkViewModel: ObservableObject {
                 replaceBookmarks(with: sidecarBookmarks, record: currentRecord, context: context)
                 try context.save()
                 objectWillChange.send()
-            } else {
+            } else if !sortedBookmarks.isEmpty {
                 try BookmarkSidecarStore.save(record: currentRecord, bookmarks: sortedBookmarks)
             }
             exportErrorMessage = nil
@@ -285,7 +285,7 @@ final class BookmarkViewModel: ObservableObject {
         do {
             try context?.save()
             if let currentRecord {
-                try BookmarkSidecarStore.save(record: currentRecord, bookmarks: sortedBookmarks)
+                try BookmarkSidecarStore.sync(record: currentRecord, bookmarks: sortedBookmarks)
             }
             exportErrorMessage = nil
             objectWillChange.send()

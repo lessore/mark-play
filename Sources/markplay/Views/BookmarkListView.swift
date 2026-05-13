@@ -7,11 +7,11 @@ struct BookmarkListView: View {
     var body: some View {
         ScrollViewReader { proxy in
             ScrollView {
-                LazyVStack(spacing: 8) {
+                LazyVStack(spacing: 4) {
                     ForEach(Array(bookmarkViewModel.sortedBookmarks.enumerated()), id: \.element.id) { index, bookmark in
                         BookmarkRowView(index: index + 1, bookmark: bookmark)
                         .id(bookmark.id)
-                        .contentShape(Rectangle())
+                        .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
                         .simultaneousGesture(TapGesture(count: 1).onEnded {
                             if bookmarkViewModel.editingBookmarkID != bookmark.id {
                                 bookmarkViewModel.finishEditingBookmark()
@@ -49,7 +49,8 @@ struct BookmarkListView: View {
                         }
                     }
                 }
-                .padding(10)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 8)
             }
             .background(Color.clear)
             .contentShape(Rectangle())
@@ -60,7 +61,7 @@ struct BookmarkListView: View {
                 guard let id else {
                     return
                 }
-                withAnimation {
+                withAnimation(.easeOut(duration: 0.2)) {
                     proxy.scrollTo(id, anchor: .center)
                 }
             }
