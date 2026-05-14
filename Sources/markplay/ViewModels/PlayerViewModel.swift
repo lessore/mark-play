@@ -18,7 +18,10 @@ final class PlayerViewModel: ObservableObject {
     @Published var activeSubtitleCue: SubtitleCue?
     @Published var errorMessage: String?
 
+    var onPlaybackEnded: (() -> Void)?
+
     private var timeObserver: Any?
+    private var itemEndObserver: (any NSObjectProtocol)?
 
     init() {
         player.volume = volume
@@ -35,6 +38,7 @@ final class PlayerViewModel: ObservableObject {
             let record = try VideoRecordResolver.resolve(url: url, context: context)
             let item = AVPlayerItem(url: url)
             player.replaceCurrentItem(with: item)
+            installItemEndObserver(for: item)
             currentURL = url
             currentRecord = record
             currentTime = 0
@@ -115,6 +119,7 @@ final class PlayerViewModel: ObservableObject {
     func stopAndClear() {
         player.pause()
         player.replaceCurrentItem(with: nil)
+        removeItemEndObserver()
         currentURL = nil
         currentRecord = nil
         hasVideoTrack = true
@@ -149,6 +154,28 @@ final class PlayerViewModel: ObservableObject {
                 self.isPlaying = self.player.timeControlStatus == .playing
             }
         }
+    }
+
+    private func installItemEndObserver(for item: AVPlayerItem) {
+        removeItemEndObserver()
+        itemEndObserver = NotificationCenter.default.addObserver(
+            forName: .AVPlayerItemDidPlayToEndTime,
+            object: item,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in
+                self?.isPlaying = false
+                self?.onPlaybackEnded?()
+            }
+        }
+    }
+
+    private func removeItemEndObserver() {
+        guard let itemEndObserver else {
+            return
+        }
+        NotificationCenter.default.removeObserver(itemEndObserver)
+        self.itemEndObserver = nil
     }
 
     private func syncActiveSubtitle() {

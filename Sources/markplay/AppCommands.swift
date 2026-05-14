@@ -9,6 +9,15 @@ struct AppCommands: Commands {
             }
             .keyboardShortcut("o", modifiers: .command)
 
+            Button("添加 MP3 到播放列表...") {
+                post(.openPlaylistFiles)
+            }
+            .keyboardShortcut("o", modifiers: [.command, .shift])
+
+            Button("添加文件夹到播放列表...") {
+                post(.openPlaylistFolder)
+            }
+
             Divider()
 
             Button("导出书签为 CSV...") {
@@ -110,6 +119,8 @@ struct AppCommands: Commands {
 
 enum AppCommandAction {
     case openVideo
+    case openPlaylistFiles
+    case openPlaylistFolder
     case exportBookmarks
     case togglePlayback
     case skipBackward

@@ -8,6 +8,7 @@ enum BookmarkSidebarStyle {
 private enum SidebarPanel: String, CaseIterable, Identifiable {
     case bookmarks
     case subtitles
+    case playlist
 
     var id: String { rawValue }
 
@@ -17,6 +18,8 @@ private enum SidebarPanel: String, CaseIterable, Identifiable {
             return "书签"
         case .subtitles:
             return "字幕"
+        case .playlist:
+            return "播放列表"
         }
     }
 }
@@ -35,15 +38,7 @@ struct BookmarkSidebarView: View {
         VStack(alignment: .leading, spacing: 0) {
             header
 
-            if playerViewModel.currentRecord == nil {
-                PlaceholderView(
-                    title: "未打开媒体",
-                    message: "打开本地媒体后可查看书签和字幕",
-                    style: style
-                )
-            } else {
-                panelContent
-            }
+            panelContent
         }
         .frame(maxHeight: .infinity, alignment: .top)
         .foregroundStyle(Color.white.opacity(0.92))
@@ -66,14 +61,18 @@ struct BookmarkSidebarView: View {
 
             Button {
                 bookmarkViewModel.finishEditingBookmark()
-                bookmarkViewModel.beginBookmarkNaming(at: playerViewModel.currentTime)
+                if selectedPanel == .playlist {
+                    NotificationCenter.default.post(name: .appCommand, object: AppCommandAction.openPlaylistFiles)
+                } else {
+                    bookmarkViewModel.beginBookmarkNaming(at: playerViewModel.currentTime)
+                }
             } label: {
                 Image(systemName: "plus")
             }
             .buttonStyle(.borderless)
             .foregroundStyle(Color.white.opacity(0.86))
-            .help("添加当前时间书签")
-            .disabled(playerViewModel.currentRecord == nil)
+            .help(selectedPanel == .playlist ? "添加 MP3 到播放列表" : "添加当前时间书签")
+            .disabled(selectedPanel != .playlist && playerViewModel.currentRecord == nil)
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 10)
@@ -104,7 +103,13 @@ struct BookmarkSidebarView: View {
     private var panelContent: some View {
         switch selectedPanel {
         case .bookmarks:
-            if bookmarkViewModel.sortedBookmarks.isEmpty {
+            if playerViewModel.currentRecord == nil {
+                PlaceholderView(
+                    title: "未打开媒体",
+                    message: "打开本地媒体后可查看书签",
+                    style: style
+                )
+            } else if bookmarkViewModel.sortedBookmarks.isEmpty {
                 PlaceholderView(
                     title: "暂无书签",
                     message: "按 Cmd+B 添加",
@@ -114,7 +119,14 @@ struct BookmarkSidebarView: View {
                 BookmarkListView()
             }
         case .subtitles:
-            if playerViewModel.subtitleCues.isEmpty {
+            if playerViewModel.currentRecord == nil {
+                PlaceholderView(
+                    title: "未打开媒体",
+                    message: "打开本地媒体后可查看字幕",
+                    style: style,
+                    systemImage: "captions.bubble"
+                )
+            } else if playerViewModel.subtitleCues.isEmpty {
                 PlaceholderView(
                     title: "暂无内嵌字幕",
                     message: "当前媒体未检测到可用字幕",
@@ -124,6 +136,8 @@ struct BookmarkSidebarView: View {
             } else {
                 SubtitleListView()
             }
+        case .playlist:
+            PlaylistView()
         }
     }
 
@@ -140,7 +154,7 @@ struct BookmarkSidebarView: View {
                     Text(panel.title)
                         .font(.system(size: 14, weight: .semibold))
                         .foregroundStyle(panelButtonForeground(for: panel))
-                        .frame(minWidth: 56)
+                        .frame(minWidth: panel == .playlist ? 74 : 48)
                         .padding(.horizontal, 12)
                         .padding(.vertical, 8)
                         .background(panelButtonBackground(for: panel))
@@ -172,7 +186,7 @@ struct BookmarkSidebarView: View {
     }
 }
 
-private struct PlaceholderView: View {
+struct PlaceholderView: View {
     let title: String
     let message: String
     var style: BookmarkSidebarStyle = .sidebar

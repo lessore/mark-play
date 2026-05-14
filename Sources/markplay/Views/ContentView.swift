@@ -7,6 +7,7 @@ struct ContentView: View {
     @Environment(\.modelContext) private var modelContext
     @EnvironmentObject private var playerViewModel: PlayerViewModel
     @EnvironmentObject private var bookmarkViewModel: BookmarkViewModel
+    @EnvironmentObject private var playlistViewModel: PlaylistViewModel
     @State private var isSidebarVisible = true
     @State private var sidebarWasVisibleBeforeFullscreen = true
     @State private var isFullscreenSidebarVisible = false
@@ -39,6 +40,9 @@ struct ContentView: View {
         )
         .onAppear {
             bookmarkViewModel.bind(record: playerViewModel.currentRecord, context: modelContext)
+            playerViewModel.onPlaybackEnded = {
+                playlistViewModel.playNext(context: modelContext, playerViewModel: playerViewModel)
+            }
             syncTrafficLightVisibility()
         }
         .onChange(of: playerViewModel.currentRecord) { _, record in
@@ -116,9 +120,15 @@ struct ContentView: View {
             }
             handle(command)
         }
-        .onDrop(of: [.movie, .mpeg4Movie, .quickTimeMovie, .audio, .mp3, .fileURL], isTargeted: $isDropTargeted) { providers in
+        .onDrop(of: [.movie, .mpeg4Movie, .quickTimeMovie, .audio, .mp3, .fileURL, .url], isTargeted: $isDropTargeted) { providers in
             handleDrop(providers)
         }
+        .background(
+            FileDropBridge(
+                isTargeted: $isDropTargeted,
+                onDrop: handleInputURLs
+            )
+        )
         .overlay {
             if isDropTargeted {
                 RoundedRectangle(cornerRadius: 0)
@@ -129,7 +139,7 @@ struct ContentView: View {
         .alert("提示", isPresented: errorBinding) {
             Button("确定", role: .cancel) {}
         } message: {
-            Text(playerViewModel.errorMessage ?? bookmarkViewModel.exportErrorMessage ?? "")
+            Text(playerViewModel.errorMessage ?? bookmarkViewModel.exportErrorMessage ?? playlistViewModel.errorMessage ?? "")
         }
         .confirmationDialog("删除当前视频的全部书签？", isPresented: $bookmarkViewModel.showDeleteAllConfirmation) {
             Button("删除全部", role: .destructive) {
@@ -251,51 +261,135 @@ struct ContentView: View {
 
     private var errorBinding: Binding<Bool> {
         Binding(
-            get: { playerViewModel.errorMessage != nil || bookmarkViewModel.exportErrorMessage != nil },
+            get: {
+                playerViewModel.errorMessage != nil ||
+                    bookmarkViewModel.exportErrorMessage != nil ||
+                    playlistViewModel.errorMessage != nil
+            },
             set: { isPresented in
                 if !isPresented {
                     playerViewModel.errorMessage = nil
                     bookmarkViewModel.exportErrorMessage = nil
+                    playlistViewModel.errorMessage = nil
                 }
             }
         )
     }
 
     private func handleDrop(_ providers: [NSItemProvider]) -> Bool {
-        guard let provider = providers.first else {
+        guard !providers.isEmpty else {
             return false
         }
 
-        provider.loadItem(forTypeIdentifier: UTType.fileURL.identifier, options: nil) { item, _ in
-            let data = item as? Data
-            let url = data.flatMap { URL(dataRepresentation: $0, relativeTo: nil) }
-            Task { @MainActor in
-                if let url {
-                    playerViewModel.openMedia(url: url, context: modelContext)
+        let group = DispatchGroup()
+        let accumulator = DroppedURLAccumulator()
+
+        for (index, provider) in providers.enumerated() {
+            if let itemTypeIdentifier = dropItemTypeIdentifier(for: provider) {
+                group.enter()
+                provider.loadItem(forTypeIdentifier: itemTypeIdentifier, options: nil) { item, _ in
+                    if let url = droppedURL(from: item) {
+                        accumulator.append(url, at: index)
+                    }
+                    group.leave()
                 }
+            } else if let fileTypeIdentifier = dropFileRepresentationTypeIdentifier(for: provider) {
+                group.enter()
+                provider.loadInPlaceFileRepresentation(forTypeIdentifier: fileTypeIdentifier) { url, _, _ in
+                    if let url {
+                        accumulator.append(url, at: index)
+                    }
+                    group.leave()
+                }
+            }
+        }
+
+        group.notify(queue: .main) {
+            let urls = accumulator.urlsInOriginalOrder()
+            if urls.isEmpty {
+                playlistViewModel.errorMessage = "拖入内容没有可读取的文件路径。"
+            } else {
+                handleInputURLs(urls)
             }
         }
         return true
     }
 
+    private func dropItemTypeIdentifier(for provider: NSItemProvider) -> String? {
+        if provider.hasItemConformingToTypeIdentifier(UTType.fileURL.identifier) {
+            return UTType.fileURL.identifier
+        }
+
+        if provider.hasItemConformingToTypeIdentifier(UTType.url.identifier) {
+            return UTType.url.identifier
+        }
+
+        return nil
+    }
+
+    private func dropFileRepresentationTypeIdentifier(for provider: NSItemProvider) -> String? {
+        let fileTypes: [UTType] = [
+            .mp3,
+            .audio,
+            .mpeg4Movie,
+            .quickTimeMovie,
+            .movie
+        ]
+
+        return fileTypes
+            .map(\.identifier)
+            .first { provider.hasItemConformingToTypeIdentifier($0) }
+    }
+
     private func openMedia() {
         let panel = NSOpenPanel()
         panel.allowedContentTypes = [.mpeg4Movie, .quickTimeMovie, .movie, .mp3]
-        panel.allowsMultipleSelection = false
-        panel.canChooseDirectories = false
+        panel.allowsMultipleSelection = true
+        panel.canChooseDirectories = true
         panel.canChooseFiles = true
 
-        guard panel.runModal() == .OK, let url = panel.url else {
+        guard panel.runModal() == .OK else {
             return
         }
 
-        playerViewModel.openMedia(url: url, context: modelContext)
+        handleInputURLs(panel.urls)
+    }
+
+    private func openPlaylistFiles() {
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = [.mp3]
+        panel.allowsMultipleSelection = true
+        panel.canChooseDirectories = false
+        panel.canChooseFiles = true
+
+        guard panel.runModal() == .OK else {
+            return
+        }
+
+        playlistViewModel.append(urls: panel.urls, context: modelContext, playerViewModel: playerViewModel)
+    }
+
+    private func openPlaylistFolder() {
+        let panel = NSOpenPanel()
+        panel.allowsMultipleSelection = true
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+
+        guard panel.runModal() == .OK else {
+            return
+        }
+
+        playlistViewModel.append(urls: panel.urls, context: modelContext, playerViewModel: playerViewModel)
     }
 
     private func handle(_ command: AppCommandAction) {
         switch command {
         case .openVideo:
             openMedia()
+        case .openPlaylistFiles:
+            openPlaylistFiles()
+        case .openPlaylistFolder:
+            openPlaylistFolder()
         case .exportBookmarks:
             bookmarkViewModel.exportCSV()
         case .togglePlayback:
@@ -329,6 +423,35 @@ struct ContentView: View {
         case .deleteAllBookmarks:
             bookmarkViewModel.showDeleteAllConfirmation = true
         }
+    }
+
+    private func handleInputURLs(_ urls: [URL]) {
+        guard !urls.isEmpty else {
+            return
+        }
+
+        let playlistURLs = urls.filter { isMP3($0) || isDirectory($0) }
+        if !playlistURLs.isEmpty {
+            playlistViewModel.append(urls: playlistURLs, context: modelContext, playerViewModel: playerViewModel)
+            return
+        }
+
+        if urls.count == 1, let url = urls.first {
+            playlistViewModel.currentItemID = nil
+            playerViewModel.openMedia(url: url, context: modelContext)
+        } else {
+            playerViewModel.errorMessage = "一次只能直接打开一个非 MP3 媒体文件。"
+        }
+    }
+
+    private func isMP3(_ url: URL) -> Bool {
+        url.pathExtension.lowercased() == "mp3"
+    }
+
+    private func isDirectory(_ url: URL) -> Bool {
+        var isDirectory: ObjCBool = false
+        FileManager.default.fileExists(atPath: url.path(percentEncoded: false), isDirectory: &isDirectory)
+        return isDirectory.boolValue
     }
 
     private func handleKeyDown(_ event: NSEvent) {
@@ -633,7 +756,7 @@ private struct EmptyVideoState: View {
                 Text("打开本地媒体")
                     .font(.title3.weight(.semibold))
 
-                Text("拖入窗口，或点击下方按钮选择文件")
+                Text("拖入媒体、MP3 或文件夹，或点击下方按钮选择文件")
                     .font(.subheadline)
                     .foregroundStyle(Color.white.opacity(0.62))
             }
@@ -944,4 +1067,130 @@ private final class SidebarResizeNSView: NSView {
             break
         }
     }
+}
+
+private final class DroppedURLAccumulator: @unchecked Sendable {
+    private let lock = NSLock()
+    private var indexedURLs: [Int: URL] = [:]
+
+    func append(_ url: URL, at index: Int) {
+        lock.lock()
+        indexedURLs[index] = url
+        lock.unlock()
+    }
+
+    func urlsInOriginalOrder() -> [URL] {
+        lock.lock()
+        let urls = indexedURLs.keys.sorted().compactMap { indexedURLs[$0] }
+        lock.unlock()
+        return urls
+    }
+}
+
+private struct FileDropBridge: NSViewRepresentable {
+    @Binding var isTargeted: Bool
+    let onDrop: ([URL]) -> Void
+
+    func makeNSView(context: Context) -> FileDropNSView {
+        let view = FileDropNSView()
+        view.onTargetChanged = { isTargeted = $0 }
+        view.onDrop = onDrop
+        return view
+    }
+
+    func updateNSView(_ nsView: FileDropNSView, context: Context) {
+        nsView.onTargetChanged = { isTargeted = $0 }
+        nsView.onDrop = onDrop
+    }
+}
+
+private final class FileDropNSView: NSView {
+    var onTargetChanged: ((Bool) -> Void)?
+    var onDrop: (([URL]) -> Void)?
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        registerForDraggedTypes([.fileURL, .URL])
+    }
+
+    required init?(coder: NSCoder) {
+        super.init(coder: coder)
+        registerForDraggedTypes([.fileURL, .URL])
+    }
+
+    override func draggingEntered(_ sender: any NSDraggingInfo) -> NSDragOperation {
+        guard fileURLs(from: sender).isEmpty == false else {
+            return []
+        }
+        onTargetChanged?(true)
+        return .copy
+    }
+
+    override func draggingUpdated(_ sender: any NSDraggingInfo) -> NSDragOperation {
+        fileURLs(from: sender).isEmpty ? [] : .copy
+    }
+
+    override func draggingExited(_ sender: (any NSDraggingInfo)?) {
+        onTargetChanged?(false)
+    }
+
+    override func performDragOperation(_ sender: any NSDraggingInfo) -> Bool {
+        let urls = fileURLs(from: sender)
+        onTargetChanged?(false)
+        guard !urls.isEmpty else {
+            return false
+        }
+        onDrop?(urls)
+        return true
+    }
+
+    override func concludeDragOperation(_ sender: (any NSDraggingInfo)?) {
+        onTargetChanged?(false)
+    }
+
+    private func fileURLs(from sender: any NSDraggingInfo) -> [URL] {
+        let pasteboard = sender.draggingPasteboard
+        let options: [NSPasteboard.ReadingOptionKey: Any] = [
+            .urlReadingFileURLsOnly: true
+        ]
+        let objects = pasteboard.readObjects(forClasses: [NSURL.self], options: options) ?? []
+        return objects.compactMap { object in
+            if let url = object as? URL {
+                return url
+            }
+            if let url = object as? NSURL {
+                return url as URL
+            }
+            return nil
+        }
+    }
+}
+
+private func droppedURL(from item: (any NSSecureCoding)?) -> URL? {
+    if let url = item as? URL {
+        return url
+    }
+
+    if let url = item as? NSURL {
+        return url as URL
+    }
+
+    if let string = item as? String {
+        return URL(string: string)
+    }
+
+    if let string = item as? NSString {
+        return URL(string: string as String)
+    }
+
+    let data = item as? Data
+    if let dataURL = data.flatMap({ URL(dataRepresentation: $0, relativeTo: nil) }) {
+        return dataURL
+    }
+
+    if let data, let string = String(data: data, encoding: .utf8) {
+        return URL(string: string.trimmingCharacters(in: .whitespacesAndNewlines))
+    }
+
+    return nil
 }

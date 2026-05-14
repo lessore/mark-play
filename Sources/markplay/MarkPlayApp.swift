@@ -22,6 +22,7 @@ struct MarkPlayApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @StateObject private var playerViewModel = PlayerViewModel()
     @StateObject private var bookmarkViewModel = BookmarkViewModel()
+    @StateObject private var playlistViewModel = PlaylistViewModel()
     private let sharedModelContainer: ModelContainer = {
         do {
             return try ModelContainer(for: VideoRecord.self, Bookmark.self)
@@ -35,6 +36,7 @@ struct MarkPlayApp: App {
             ContentView()
                 .environmentObject(playerViewModel)
                 .environmentObject(bookmarkViewModel)
+                .environmentObject(playlistViewModel)
                 .modelContainer(sharedModelContainer)
                 .frame(minWidth: 760, minHeight: 460)
         }
