@@ -22,6 +22,7 @@ final class PlayerViewModel: ObservableObject {
 
     private var timeObserver: Any?
     private var itemEndObserver: (any NSObjectProtocol)?
+    private var subtitleLoadingTask: Task<Void, Never>?
 
     init() {
         player.volume = volume
@@ -43,10 +44,12 @@ final class PlayerViewModel: ObservableObject {
             currentRecord = record
             currentTime = 0
             duration = 0
-            subtitleCues = (try? EmbeddedSubtitleParser.parse(fromFileAt: url)) ?? []
+            subtitleLoadingTask?.cancel()
+            subtitleCues = []
             activeSubtitleCue = nil
             hasVideoTrack = true
             detectVideoTrack(for: item, url: url)
+            loadSubtitlesIfNeeded(for: url)
             applyPlaybackRate()
             errorMessage = nil
         } catch {
@@ -129,6 +132,8 @@ final class PlayerViewModel: ObservableObject {
         subtitleCues = []
         activeSubtitleCue = nil
         errorMessage = nil
+        subtitleLoadingTask?.cancel()
+        subtitleLoadingTask = nil
     }
 
     private func applyPlaybackRate() {
@@ -202,6 +207,30 @@ final class PlayerViewModel: ObservableObject {
                     return
                 }
                 self.hasVideoTrack = !tracks.isEmpty
+            }
+        }
+    }
+
+    private func loadSubtitlesIfNeeded(for url: URL) {
+        guard EmbeddedSubtitleParser.canParseFile(at: url) else {
+            return
+        }
+
+        subtitleLoadingTask = Task { [weak self] in
+            let cues = await Task.detached(priority: .utility) {
+                (try? EmbeddedSubtitleParser.parse(fromFileAt: url)) ?? []
+            }.value
+
+            guard !Task.isCancelled else {
+                return
+            }
+
+            await MainActor.run {
+                guard let self, self.currentURL == url else {
+                    return
+                }
+                self.subtitleCues = cues
+                self.syncActiveSubtitle()
             }
         }
     }

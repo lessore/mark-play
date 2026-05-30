@@ -1,7 +1,15 @@
 import Foundation
 
 enum EmbeddedSubtitleParser {
+    static func canParseFile(at url: URL) -> Bool {
+        url.pathExtension.caseInsensitiveCompare("mp3") == .orderedSame
+    }
+
     static func parse(fromFileAt url: URL) throws -> [SubtitleCue] {
+        guard canParseFile(at: url) else {
+            return []
+        }
+
         let data = try Data(contentsOf: url, options: [.mappedIfSafe])
         return parse(data: data)
     }
