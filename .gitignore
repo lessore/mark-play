@@ -3,6 +3,7 @@
 # SwiftPM
 .build/
 .swiftpm/
+.cache/
 
 # Local build and release artifacts
 dist/
